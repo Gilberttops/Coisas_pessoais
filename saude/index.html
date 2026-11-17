@@ -268,6 +268,10 @@ var TOKEN_KEY = 'saude_token';
 // ---------- servidor ----------
 var URL_KEY = 'saude_api_url', URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
 var NO_GOOGLE = !(window.google && google.script && google.script.run);
+// Link de configuração: .../saude/#api=<URL /exec>. O trecho depois do # não vai para o servidor do GitHub; é salvo aqui e apagado da barra.
+(function(){ var m = /[#&]api=([^&]+)/.exec(location.hash); if (!m) return;
+  var u = decodeURIComponent(m[1]); if (URL_RE.test(u)) { try { localStorage.setItem(URL_KEY, u); } catch(e){} }
+  try { history.replaceState(null, '', location.pathname + location.search); } catch(e){ location.hash = ''; } })();
 function apiUrl(){ try { var u = localStorage.getItem(URL_KEY) || ''; return URL_RE.test(u) ? u : ''; } catch(e){ return ''; } }
 function call(body){
   if (!NO_GOOGLE) return new Promise(function(res, rej){
