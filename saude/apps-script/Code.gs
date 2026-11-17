@@ -20,7 +20,7 @@ var LOCAIS = ['', 'Abdômen', 'Coxa', 'Braço'];
 var SCHEMA = {
   peso: { aba: 'Peso', prefixo: 'P', campos: [
     ['data', 'Data', 'date'], ['peso', 'Peso (kg)', 'num', 20, 300], ['gordura', 'Gordura (%)', 'num', 1, 75],
-    ['agua', 'Água (%)', 'num', 20, 85], ['musculo', 'Músculo (%)', 'num', 10, 75], ['osso', 'Massa óssea (kg)', 'num', 0.5, 10],
+    ['agua', 'Água (%)', 'num', 20, 85], ['musculo', 'Músculo (%)', 'num', 10, 75], ['osso', 'Massa óssea (kg)', 'num', 0.5, 25],
     ['kcal', 'Kcal basal/ativa', 'num', 500, 6000, 'int'], ['cintura', 'Cintura (cm)', 'num', 40, 200], ['obs', 'Obs', 'text']] },
   atividade: { aba: 'Atividades', prefixo: 'A', campos: [
     ['data', 'Data', 'date'], ['tipo', 'Tipo', 'text'], ['minutos', 'Minutos', 'num', 1, 1440, 'int'],
