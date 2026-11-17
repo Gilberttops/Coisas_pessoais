@@ -205,7 +205,15 @@ svg text{fill:var(--mut);font:500 11px Barlow,sans-serif}
         <button class="btn">Salvar</button>
       </form>
     </div>
-    <div class="card"><h2>Relógio (Strava)</h2>
+    <div class="card"><h2>Relógio (Mi Fitness)</h2>
+      <p>Uma vez por mês, traga sono, passos e treinos do relógio:</p>
+      <ol class="muted" style="padding-left:20px;margin:0 0 12px">
+        <li>No Mi Fitness: Perfil &gt; Configurações &gt; Privacidade &gt; baixar meus dados (chega por e-mail).</li>
+        <li>No computador: <code>python converter_mifitness.py "pasta baixada"</code>.</li>
+        <li>Na planilha: Arquivo &gt; Importar os 2 CSV (nova página) e menu Saúde &gt; Importar histórico do Mi Fitness.</li>
+      </ol>
+      <p class="muted">O que já foi importado não duplica. Treino da semana que quiser ver antes: lance na aba Atividade.</p>
+      <details style="margin-top:8px"><summary class="muted" style="cursor:pointer">Strava (só para assinantes do Strava)</summary>
       <p class="muted" id="stravaInfo">Carregando…</p>
       <form id="fStrava" class="hide">
         <p class="muted">Crie um app em strava.com/settings/api (pelo computador), com "Authorization Callback Domain" = script.google.com, e cole aqui:</p>
@@ -220,6 +228,7 @@ svg text{fill:var(--mut);font:500 11px Barlow,sans-serif}
         <button class="btn sec hide" id="btnStrava" type="button">Buscar treinos agora</button>
         <button class="btn del hide" id="btnDesc" type="button">Desconectar</button>
       </div>
+      </details>
     </div>
     <div class="card"><h2>Trocar minha senha</h2>
       <form id="fSenha">
