@@ -206,6 +206,15 @@ svg text{fill:var(--mut);font:500 11px Barlow,sans-serif}
       </form>
     </div>
     <div class="card"><h2>Relógio (Mi Fitness)</h2>
+      <p><b>Automático (Health Connect):</b> <span class="muted" id="hcInfo">Carregando…</span></p>
+      <ol class="muted" style="padding-left:20px;margin:0 0 8px">
+        <li>No Mi Fitness, deixe ligado o envio para a Conexão Saúde (Health Connect).</li>
+        <li>Instale o app <b>HC Webhook</b> (Play Store) e libere a leitura de Exercícios, Passos, Sono e Frequência cardíaca, inclusive o histórico.</li>
+        <li>Toque em <b>Gerar link do celular</b>, copie e cole como webhook no HC Webhook. Sincronização: a cada hora.</li>
+      </ol>
+      <div class="btns" style="margin-bottom:8px"><button class="btn sec" id="btnHc" type="button">Gerar link do celular</button><button class="btn del hide" id="btnHcOff" type="button">Desligar</button></div>
+      <p class="hide" id="hcLinkBox" style="word-break:break-all;font-size:13px"></p>
+      <details><summary class="muted" style="cursor:pointer">Sem o HC Webhook: importação mensal</summary>
       <p>Uma vez por mês, traga sono, passos e treinos do relógio:</p>
       <ol class="muted" style="padding-left:20px;margin:0 0 12px">
         <li>No Mi Fitness: Perfil &gt; Configurações &gt; Privacidade &gt; baixar meus dados (chega por e-mail).</li>
@@ -213,6 +222,7 @@ svg text{fill:var(--mut);font:500 11px Barlow,sans-serif}
         <li>Na planilha: Arquivo &gt; Importar os 2 CSV (nova página) e menu Saúde &gt; Importar histórico do Mi Fitness.</li>
       </ol>
       <p class="muted">O que já foi importado não duplica. Treino da semana que quiser ver antes: lance na aba Atividade.</p>
+      </details>
       <details style="margin-top:8px"><summary class="muted" style="cursor:pointer">Strava (só para assinantes do Strava)</summary>
       <p class="muted" id="stravaInfo">Carregando…</p>
       <form id="fStrava" class="hide">
@@ -316,7 +326,7 @@ function sortAsc(a){ return sortDesc(a).reverse(); }
 // ---------- sessão ----------
 function getTok(){ try { var o = JSON.parse(localStorage.getItem(TOKEN_KEY) || 'null'); return o && o.exp > Date.now() ? o.t : null; } catch(e){ return null; } }
 function setTok(t, exp){ try { if (t) localStorage.setItem(TOKEN_KEY, JSON.stringify({t: t, exp: exp})); else localStorage.removeItem(TOKEN_KEY); } catch(e){} }
-function showLogin(){ var semUrl = NO_GOOGLE && !window.MOCK_API && !apiUrl(); $('#lblUrl').classList.toggle('hide', !semUrl); $('#trocarUrl').classList.toggle('hide', !NO_GOOGLE || semUrl || !!window.MOCK_API); S.t = null; S.data = null; setTok(null); ['#kpis','#kMed','#chartPeso','#chartComp','#chartAtiv','#lPeso','#lAtiv','#lDia','#lMed','#lUsers','#quem'].forEach(function(s){ $(s).innerHTML = ''; }); $('#fCfg').reset(); $('#fStrava').reset(); $('#fSenha').reset(); $('#fUser').reset(); $('#cardUsers').classList.add('hide'); Object.keys(FORMS).forEach(resetForm); try { $('#fLogin').login.value = localStorage.getItem('saude_login') || ''; } catch(e){} $('#login').classList.remove('hide'); $$('.tab').forEach(function(x){ x.classList.add('hide'); }); $('#nav').classList.add('hide'); $('#sair').classList.add('hide'); }
+function showLogin(){ var semUrl = NO_GOOGLE && !window.MOCK_API && !apiUrl(); $('#lblUrl').classList.toggle('hide', !semUrl); $('#trocarUrl').classList.toggle('hide', !NO_GOOGLE || semUrl || !!window.MOCK_API); S.t = null; S.data = null; setTok(null); ['#kpis','#kMed','#chartPeso','#chartComp','#chartAtiv','#lPeso','#lAtiv','#lDia','#lMed','#lUsers','#quem','#hcLinkBox'].forEach(function(s){ $(s).innerHTML = ''; }); $('#fCfg').reset(); $('#fStrava').reset(); $('#fSenha').reset(); $('#fUser').reset(); $('#cardUsers').classList.add('hide'); Object.keys(FORMS).forEach(resetForm); try { $('#fLogin').login.value = localStorage.getItem('saude_login') || ''; } catch(e){} $('#login').classList.remove('hide'); $$('.tab').forEach(function(x){ x.classList.add('hide'); }); $('#nav').classList.add('hide'); $('#sair').classList.add('hide'); }
 function handleErr(r){ if (r && r.error === 'unauthorized'){ showLogin(); msg('Sessão expirada. Entre de novo.'); return true; } return false; }
 
 $('#fLogin').addEventListener('submit', function(e){
@@ -455,6 +465,7 @@ function renderAll(){
   $('#cardUsers').classList.toggle('hide', !me.admin);
   if (me.admin) loadUsers();
   renderStrava(S.data.strava || {});
+  renderHc(S.data.hc || {});
   if (!$('#fMed').id.value) prefillMed();
   var c = S.data.config || {}, f = $('#fCfg');
   f.altura.value = c.altura ? String(c.altura).replace('.', ',') : '';
@@ -572,6 +583,24 @@ function barSemanas(A){
   return g + '</svg>';
 }
 
+function renderHc(h){
+  $('#hcInfo').textContent = h.ligado ? 'ligado' + (h.ultima ? ', último envio em ' + h.ultima + '.' : ', aguardando o primeiro envio do celular.') : 'desligado.';
+  $('#btnHcOff').classList.toggle('hide', !h.ligado);
+  $('#btnHc').textContent = h.ligado ? 'Gerar link novo' : 'Gerar link do celular';
+}
+$('#btnHc').addEventListener('click', function(){
+  if (S.data.hc && S.data.hc.ligado && !confirm('Gerar um link novo? O link antigo para de funcionar e precisa ser trocado no HC Webhook.')) return;
+  simples('hcLink', {}, this).then(function(r){
+    if (!r) return; S.data.hc = r.hc; renderHc(r.hc);
+    var box = $('#hcLinkBox'); box.textContent = r.url; box.classList.remove('hide');
+    var done = function(){ msg('Link copiado. Cole no HC Webhook como endereço do webhook. Não compartilhe: quem tiver o link consegue gravar no seu diário.', true); };
+    if (navigator.clipboard) navigator.clipboard.writeText(r.url).then(done, function(){ msg('Copie o link que apareceu abaixo do botão.', true); }); else msg('Copie o link que apareceu abaixo do botão.', true);
+  });
+});
+$('#btnHcOff').addEventListener('click', function(){
+  if (!confirm('Desligar? O celular para de enviar os dados (o que já veio continua).')) return;
+  simples('hcOff', {}, this).then(function(r){ if (r){ S.data.hc = r.hc; renderHc(r.hc); $('#hcLinkBox').classList.add('hide'); msg('Desligado.', true); } });
+});
 function renderStrava(st){
   $('#stravaInfo').textContent = st.conectado ? 'Conectado. Os treinos chegam sozinhos de hora em hora' + (st.ultima ? '. Última busca: ' + st.ultima + '.' : '.')
     : st.configurado ? 'Chaves salvas. Falta conectar: toque em "Conectar ao Strava", autorize e volte aqui.'

@@ -223,6 +223,7 @@ function configSheet_(ss) {
 function doPost(e) {
   var body;
   try { body = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: 'requisicao_invalida' }); }
+  if (e.parameter && e.parameter.k) return json_(hcWebhook_(e.parameter.k, body)); // app HC Webhook (Health Connect)
   return json_(api(body));
 }
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
@@ -247,6 +248,8 @@ function api(body) {
       case 'syncStrava': return sincronizarStrava_(u.id, false);
       case 'stravaSetup': return comLock_(body, function (u) { return stravaSetup_(u, body.values || {}); });
       case 'stravaLink': return stravaLink_(u);
+      case 'hcLink': return comLock_(body, function (u) { return hcGerarLink_(u); });
+      case 'hcOff': return comLock_(body, function (u) { return hcDesligar_(u); });
       case 'stravaDisconnect': return comLock_(body, function (u) { return stravaDisconnect_(u); });
       case 'changePassword': return comLock_(body, function (u) { return trocarSenha_(u, body.atual, body.nova); });
       case 'users': return u.admin ? listarUsuarios_() : { ok: false, error: 'proibido' };
@@ -267,7 +270,7 @@ function comLock_(body, fn) {
 
 function load_(u) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var out = { ok: true, me: { id: u.id, nome: u.nome, login: u.login, admin: u.admin }, config: readConfig_(ss, u.id), strava: stravaStatus_(u.id) };
+  var out = { ok: true, me: { id: u.id, nome: u.nome, login: u.login, admin: u.admin }, config: readConfig_(ss, u.id), strava: stravaStatus_(u.id), hc: hcStatus_(u.id) };
   Object.keys(SCHEMA).forEach(function (k) { out[k] = readRows_(ss, SCHEMA[k], u.id); });
   return out;
 }
