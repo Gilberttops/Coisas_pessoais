@@ -272,7 +272,23 @@ function load_(u) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var out = { ok: true, me: { id: u.id, nome: u.nome, login: u.login, admin: u.admin }, config: readConfig_(ss, u.id), strava: stravaStatus_(u.id), hc: hcStatus_(u.id) };
   Object.keys(SCHEMA).forEach(function (k) { out[k] = readRows_(ss, SCHEMA[k], u.id); });
+  out.sono = readSono_(ss, u.id);
   return out;
+}
+// Aba Sono (do relógio): últimas 90 noites do usuário
+function readSono_(ss, uid) {
+  var sh = ss.getSheetByName('Sono');
+  if (!sh || sh.getLastRow() < 2) return [];
+  var hm = function (v) { if (v instanceof Date) return Utilities.formatDate(v, TZ, 'HH:mm'); v = String(v); return /^\d{1,2}:\d{2}$/.test(v) ? v : ''; };
+  var num = function (v) { if (v === '' || v == null) return null; var n = typeof v === 'number' ? v : parseNumBR(v); return isNaN(n) ? null : n; };
+  return sh.getRange(2, 1, sh.getLastRow() - 1, 9).getValues()
+    .filter(function (r) { return String(r[0]) === uid && r[4] !== ''; })
+    .map(function (r) {
+      return { data: r[1] instanceof Date ? Utilities.formatDate(r[1], TZ, 'yyyy-MM-dd') : String(r[1]), dormiu: hm(r[2]), acordou: hm(r[3]),
+        total: num(r[4]), profundo: num(r[5]), leve: num(r[6]), rem: num(r[7]), acordado: num(r[8]) };
+    })
+    .filter(function (o) { return /^\d{4}-\d{2}-\d{2}$/.test(o.data); })
+    .sort(function (a, b) { return a.data < b.data ? -1 : 1; }).slice(-90);
 }
 function readRows_(ss, sc, uid) {
   var sh = sheetFor_(ss, sc), last = sh.getLastRow();

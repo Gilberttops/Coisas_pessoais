@@ -14,9 +14,10 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#F1F4F2;--card:#FFFFFF;--tx:#1C2B33;--mut:#64737B;--pri:#2F5D8A;--pri2:#E2EAF2;--tape:#F2B632;--tapeTx:#1C2B33;--bad:#B23A2E;--good:#2F7A55;--line:#D5DDDF;
+  --s-prof:#2F4E7A;--s-leve:#7FA7D1;--s-rem:#8A6BB8;--s-acor:#E0A458;
   --c-gord:#C9862B;--c-agua:#3F86B8;--c-musc:#2F7A55;--num:'Barlow Condensed','Arial Narrow',sans-serif}
 @media (prefers-color-scheme:dark){:root{--bg:#141A1F;--card:#1C242A;--tx:#E3E9EC;--mut:#93A2A9;--pri:#8EB6DE;--pri2:#24323E;--tape:#F2C14E;--bad:#F08A7A;--good:#7CC9A0;--line:#2D383F;
-  --c-gord:#E2A65A;--c-agua:#7FB6DC;--c-musc:#7CC9A0}}
+  --c-gord:#E2A65A;--c-agua:#7FB6DC;--c-musc:#7CC9A0;--s-prof:#5C82B8;--s-leve:#A9C7E6;--s-rem:#B49AE0;--s-acor:#F0BE7A}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.5 Barlow,system-ui,sans-serif;padding-bottom:76px;-webkit-font-smoothing:antialiased}
 :focus-visible{outline:2px solid var(--tape);outline-offset:2px}
@@ -107,6 +108,11 @@ svg text{fill:var(--mut);font:500 11px Barlow,sans-serif}
     </div>
     <div class="card"><h2>Composição (balança)</h2><div id="chartComp"></div></div>
     <div class="card"><h2>Atividade: minutos por semana</h2><div id="chartAtiv"></div></div>
+    <div class="card hide" id="cardSono"><h2>Sono</h2><ul class="stats" id="kSono" style="margin:0 0 8px"></ul><div id="chartSono"></div>
+      <div class="muted leg"><i style="background:var(--s-prof);margin-left:0"></i>Profundo<i style="background:var(--s-leve)"></i>Leve<i style="background:var(--s-rem)"></i>REM<i style="background:var(--s-acor)"></i>Acordado</div>
+      <div class="muted">Últimas 14 noites (dia em que acordou). Linha amarela: 7 h. Barra cinza: noite sem as fases.</div></div>
+    <div class="card hide" id="cardFc"><h2>Frequência cardíaca nos treinos</h2><ul class="stats" id="kFc" style="margin:0 0 8px"></ul><div id="chartFc"></div>
+      <div class="muted leg"><i style="background:var(--pri);margin-left:0"></i>FC média<i style="background:var(--bad)"></i>FC máxima</div></div>
   </section>
 
   <section id="tab-peso" class="tab hide">
@@ -528,6 +534,57 @@ function renderPainel(){
   $('#chartComp').innerHTML = lineChart(comp.map(function(f, i){ return {pts: Pp.filter(function(x){ return x[f] != null; }).map(function(x){ return {data: x.data, v: x[f]}; }), w: 2, cor: cores[i], dots: true}; }), null, '%') +
     '<div class="muted leg"><i style="background:var(--c-gord);margin-left:0"></i>Gordura<i style="background:var(--c-agua)"></i>Água<i style="background:var(--c-musc)"></i>Músculo</div>';
   $('#chartAtiv').innerHTML = barSemanas(A);
+  renderSono(); renderFc(A);
+}
+
+function kpiS(l, v, s){ return '<li><span class="l">' + l + '</span><span class="v">' + v + (s ? '<span class="s">' + s + '</span>' : '') + '</span></li>'; }
+function minDia(hm){ var m = /^(\d{1,2}):(\d{2})$/.exec(hm || ''); if (!m) return null; var x = +m[1] * 60 + +m[2]; return x < 720 ? x + 1440 : x; } // dormir depois da meia-noite conta como tarde
+function hmTxt(x){ x = Math.round(x) % 1440; return ('0' + Math.floor(x / 60)).slice(-2) + ':' + ('0' + x % 60).slice(-2); }
+function hTxt(h){ if (h == null) return '–'; var m = Math.round(h * 60); return Math.floor(m / 60) + 'h' + ('0' + m % 60).slice(-2); }
+function renderSono(){
+  var S0 = (S.data.sono || []).filter(function(x){ return x.total != null && /^\d{4}-\d{2}-\d{2}$/.test(x.data); });
+  $('#cardSono').classList.toggle('hide', !S0.length);
+  if (!S0.length) return;
+  var u = S0[S0.length - 1], ini7 = addDias(hoje(), -7), s7 = S0.filter(function(x){ return x.data > ini7; });
+  var med = s7.length ? s7.reduce(function(a, x){ return a + x.total; }, 0) / s7.length : null;
+  var dorm = s7.map(function(x){ return minDia(x.dormiu); }).filter(function(x){ return x != null; });
+  var fases = s7.filter(function(x){ return x.profundo != null || x.rem != null; });
+  var k = kpiS('Última noite', hTxt(u.total), dBR(u.data) + (u.dormiu ? ', ' + esc(u.dormiu) + ' às ' + esc(u.acordou) : ''));
+  k += kpiS('Média 7 noites', hTxt(med), dorm.length ? 'dormindo ~' + hmTxt(dorm.reduce(function(a, b){ return a + b; }, 0) / dorm.length) : '');
+  if (fases.length){
+    var tp = 0, tr = 0, tt = 0; fases.forEach(function(x){ tp += x.profundo || 0; tr += x.rem || 0; tt += x.total; });
+    k += kpiS('Profundo / REM', Math.round(tp / tt * 100) + '% / ' + Math.round(tr / tt * 100) + '%', 'média de ' + fases.length + (fases.length === 1 ? ' noite' : ' noites'));
+  }
+  $('#kSono').innerHTML = k;
+  var N = S0.slice(-14), W = 420, H = 180, L = 30, B = 22, T = 8, bw = (W - L) / 14;
+  var max = Math.max(9, Math.ceil(Math.max.apply(null, N.map(function(x){ return Math.max(x.total, (x.profundo || 0) + (x.leve || 0) + (x.rem || 0) + (x.acordado || 0)); }))));
+  function Y(h){ return T + (1 - h / max) * (H - B - T); }
+  var g = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="Horas de sono por noite">';
+  [0, 4, 8].forEach(function(h){ var y = Y(h); g += '<line x1="' + L + '" x2="' + W + '" y1="' + y + '" y2="' + y + '" stroke="currentColor" opacity=".08"/><text x="' + (L - 4) + '" y="' + (y + 3) + '" text-anchor="end">' + h + 'h</text>'; });
+  var y7 = Y(7); g += '<line x1="' + L + '" x2="' + W + '" y1="' + y7 + '" y2="' + y7 + '" stroke="var(--tape)" stroke-width="2" stroke-dasharray="6 4"/>';
+  N.forEach(function(x, i){
+    var bx = L + (14 - N.length + i) * bw + 4, w = bw - 8, y = H - B, tit = dBR(x.data) + ': ' + hTxt(x.total);
+    var partes = [['profundo','--s-prof'],['leve','--s-leve'],['rem','--s-rem'],['acordado','--s-acor']].filter(function(p){ return x[p[0]] != null; });
+    if (!partes.length) partes = [['total','--mut']];
+    partes.forEach(function(p){ var hh = x[p[0]] / max * (H - B - T); y -= hh;
+      g += '<rect x="' + bx.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + hh.toFixed(1) + '" fill="var(' + p[1] + ')"><title>' + tit + (p[0] !== 'total' ? ' · ' + p[0] + ' ' + hTxt(x[p[0]]) : '') + '</title></rect>'; });
+    if ((N.length - 1 - i) % 2 === 0) g += '<text x="' + (bx + w / 2).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle">' + dBR(x.data).slice(0, 5) + '</text>';
+  });
+  $('#chartSono').innerHTML = g + '</svg>';
+}
+function renderFc(A){
+  var T0 = sortAsc(A.filter(function(a){ return a.fc != null; })).map(function(a){ var m = /FC máx (\d+)/.exec(a.obs || ''); return { data: a.data, fc: a.fc, max: m ? +m[1] : null, tipo: a.tipo }; });
+  $('#cardFc').classList.toggle('hide', !T0.length);
+  if (!T0.length) return;
+  var u = T0[T0.length - 1], ini30 = addDias(hoje(), -29), t30 = T0.filter(function(x){ return x.data >= ini30; });
+  var k = kpiS('Último treino', u.fc + ' bpm', dBR(u.data) + ' · ' + esc(u.tipo) + (u.max ? ' · máx ' + u.max : ''));
+  if (t30.length > 1) k += kpiS('Média 30 dias', Math.round(t30.reduce(function(a, x){ return a + x.fc; }, 0) / t30.length) + ' bpm', t30.length + ' treinos');
+  $('#kFc').innerHTML = k;
+  var lim = addDias(hoje(), -90), P = T0.filter(function(x){ return x.data >= lim; });
+  $('#chartFc').innerHTML = lineChart([
+    {pts: P.map(function(x){ return {data: x.data, v: x.fc}; }), w: 2, dots: true},
+    {pts: P.filter(function(x){ return x.max; }).map(function(x){ return {data: x.data, v: x.max}; }), w: 1.5, dots: true, cor: 'var(--bad)'}
+  ], null, '');
 }
 
 function regua(inicio, atual, meta){
