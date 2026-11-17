@@ -30,6 +30,18 @@ var SCHEMA = {
     ['data', 'Data', 'date'], ['sono', 'Sono (h)', 'num', 0, 24], ['agua_l', 'Água (L)', 'num', 0, 15],
     ['passos', 'Passos do dia', 'num', 0, 150000, 'int'], ['pa_sis', 'PA sistólica', 'num', 60, 260, 'int'], ['pa_dia', 'PA diastólica', 'num', 30, 160, 'int'],
     ['fc_rep', 'FC repouso', 'num', 25, 150, 'int'], ['obs', 'Obs', 'text']] },
+  avaliacao: { aba: 'Avaliacoes', prefixo: 'V', campos: [
+    ['data', 'Data', 'date'], ['peso', 'Peso (kg)', 'num', 20, 300], ['gordura', 'Gordura (%)', 'num', 1, 75], ['metodo', 'Método', 'text'],
+    ['d_sub', 'Dobra subescapular (mm)', 'num', 0, 80], ['d_tri', 'Dobra tríceps (mm)', 'num', 0, 80], ['d_tor', 'Dobra tórax (mm)', 'num', 0, 80],
+    ['d_axi', 'Dobra axilar média (mm)', 'num', 0, 80], ['d_sup', 'Dobra supra-ilíaca (mm)', 'num', 0, 80], ['d_abd', 'Dobra abdominal (mm)', 'num', 0, 80],
+    ['d_cox', 'Dobra coxa (mm)', 'num', 0, 80],
+    ['braco_e', 'Braço contraído E (cm)', 'num', 10, 80], ['braco_d', 'Braço contraído D (cm)', 'num', 10, 80],
+    ['bracor_e', 'Braço relaxado E (cm)', 'num', 10, 80], ['bracor_d', 'Braço relaxado D (cm)', 'num', 10, 80],
+    ['antebr_e', 'Antebraço E (cm)', 'num', 10, 60], ['antebr_d', 'Antebraço D (cm)', 'num', 10, 60],
+    ['coxa_e', 'Coxa E (cm)', 'num', 20, 120], ['coxa_d', 'Coxa D (cm)', 'num', 20, 120],
+    ['pant_e', 'Panturrilha E (cm)', 'num', 15, 80], ['pant_d', 'Panturrilha D (cm)', 'num', 15, 80],
+    ['torax', 'Tórax (cm)', 'num', 50, 200], ['cintura', 'Cintura (cm)', 'num', 40, 200], ['abdome', 'Abdome (cm)', 'num', 40, 220],
+    ['quadril', 'Quadril (cm)', 'num', 50, 220], ['obs', 'Obs', 'text']] },
   medicacao: { aba: 'Medicacao', prefixo: 'M', campos: [
     ['data', 'Data', 'date'], ['remedio', 'Remédio', 'text'], ['dose', 'Dose (mg)', 'num', 0.05, 20],
     ['local', 'Local', 'text'], ['obs', 'Obs', 'text']] }

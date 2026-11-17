@@ -135,6 +135,38 @@ svg text{fill:var(--mut);font:500 11px Barlow,sans-serif}
       <p class="muted">Beurer BF 195: depois de pesar, a balança mostra em sequência gordura, água, músculo, osso e kcal. Copie os números aqui.</p>
     </div>
     <div class="card"><h2>Histórico (toque para editar)</h2><div class="tbl" id="lPeso"></div></div>
+
+    <div class="card"><h2 id="tAval">Nova avaliação física</h2>
+      <p class="muted" style="margin-top:0">Avaliação da academia (dobras e fita métrica). Deixe em branco o que não foi medido.</p>
+      <form id="fAval" data-entity="avaliacao">
+        <input type="hidden" name="id">
+        <div class="row">
+          <label>Data<input type="date" name="data" required></label>
+          <label>Peso (kg)<input name="peso" inputmode="decimal"></label>
+          <label>Gordura (%) do laudo<input name="gordura" inputmode="decimal"></label>
+          <label>Método<input name="metodo" maxlength="60" placeholder="7 dobras (Jackson-Pollock)"></label>
+        </div>
+        <details><summary>Dobras cutâneas (mm)</summary><div class="row">
+          <label>Subescapular<input name="d_sub" inputmode="decimal"></label><label>Tríceps<input name="d_tri" inputmode="decimal"></label>
+          <label>Tórax<input name="d_tor" inputmode="decimal"></label><label>Axilar média<input name="d_axi" inputmode="decimal"></label>
+          <label>Supra-ilíaca<input name="d_sup" inputmode="decimal"></label><label>Abdominal<input name="d_abd" inputmode="decimal"></label>
+          <label>Coxa<input name="d_cox" inputmode="decimal"></label>
+        </div></details>
+        <details><summary>Perímetros (cm)</summary><div class="row">
+          <label>Braço contraído E<input name="braco_e" inputmode="decimal"></label><label>Braço contraído D<input name="braco_d" inputmode="decimal"></label>
+          <label>Braço relaxado E<input name="bracor_e" inputmode="decimal"></label><label>Braço relaxado D<input name="bracor_d" inputmode="decimal"></label>
+          <label>Antebraço E<input name="antebr_e" inputmode="decimal"></label><label>Antebraço D<input name="antebr_d" inputmode="decimal"></label>
+          <label>Coxa E<input name="coxa_e" inputmode="decimal"></label><label>Coxa D<input name="coxa_d" inputmode="decimal"></label>
+          <label>Panturrilha E<input name="pant_e" inputmode="decimal"></label><label>Panturrilha D<input name="pant_d" inputmode="decimal"></label>
+          <label>Tórax<input name="torax" inputmode="decimal"></label><label>Cintura<input name="cintura" inputmode="decimal"></label>
+          <label>Abdome<input name="abdome" inputmode="decimal"></label><label>Quadril<input name="quadril" inputmode="decimal"></label>
+        </div></details>
+        <label>Obs<input name="obs" maxlength="300"></label>
+        <div class="btns"><button class="btn">Salvar</button><button type="button" class="btn sec cancel hide">Cancelar</button><button type="button" class="btn del hide">Excluir</button></div>
+      </form>
+    </div>
+    <div class="card"><h2>Avaliações: comparativo</h2><div class="tbl" id="lAval"></div>
+      <div class="muted">Gordura calculada: Jackson-Pollock 7 dobras, com a idade na data (informe nascimento e sexo em Ajustes). RCQ = cintura ÷ quadril. Toque no título de uma coluna para editar.</div></div>
   </section>
 
   <section id="tab-atividade" class="tab hide">
@@ -378,8 +410,8 @@ function go(tab){
 $$('#nav button').forEach(function(b){ b.addEventListener('click', function(){ go(b.dataset.tab); }); });
 
 // ---------- formulários ----------
-var FORMS = { peso: '#fPeso', atividade: '#fAtiv', diario: '#fDia', medicacao: '#fMed' };
-var TITLES = { peso: ['#tPeso', 'Nova pesagem', 'Editar pesagem'], atividade: ['#tAtiv', 'Nova atividade', 'Editar atividade'], diario: ['#tDia', 'Registro do dia', 'Editar registro'], medicacao: ['#tMed', 'Nova aplicação', 'Editar aplicação'] };
+var FORMS = { peso: '#fPeso', atividade: '#fAtiv', diario: '#fDia', medicacao: '#fMed', avaliacao: '#fAval' };
+var TITLES = { peso: ['#tPeso', 'Nova pesagem', 'Editar pesagem'], atividade: ['#tAtiv', 'Nova atividade', 'Editar atividade'], diario: ['#tDia', 'Registro do dia', 'Editar registro'], medicacao: ['#tMed', 'Nova aplicação', 'Editar aplicação'], avaliacao: ['#tAval', 'Nova avaliação física', 'Editar avaliação'] };
 
 function resetForm(ent){
   var f = $(FORMS[ent]); f.reset(); f.id.value = ''; f.data.value = hoje();
@@ -466,6 +498,7 @@ function renderAll(){
   table('atividade', [['data','Data'],['tipo','Tipo'],['minutos','Min',0],['distancia','km',1],['kcal','Kcal',0]], '#lAtiv');
   table('diario', [['data','Data'],['sono','Sono',1],['passos','Passos',0],['pa_sis','PA s',0],['pa_dia','PA d',0],['fc_rep','FC',0]], '#lDia');
   table('medicacao', [['data','Data'],['remedio','Remédio'],['dose','mg',2],['local','Local']], '#lMed');
+  renderAval();
   var me = S.data.me || {};
   $('#quem').textContent = me.nome || '';
   $('#cardUsers').classList.toggle('hide', !me.admin);
@@ -487,7 +520,7 @@ function pesoEm(arr, dataLimite){ // último registro com data <= limite
 }
 function renderPainel(){
   if (!S.data) return;
-  var P = sortAsc(S.data.peso || []).filter(function(x){ return x.peso != null; });
+  var P = sortAsc((S.data.peso || []).concat((S.data.avaliacao || []).map(function(a){ return {id: '', data: a.data, peso: a.peso}; }))).filter(function(x){ return x.peso != null; });
   var A = S.data.atividade || [], c = S.data.config || {};
   var ult = P[P.length - 1], k = '';
   function kpi(l, v, s, cls){ return '<li><span class="l">' + l + '</span><span class="v ' + (cls || '') + '">' + v + (s ? '<span class="s">' + s + '</span>' : '') + '</span></li>'; }
@@ -535,6 +568,42 @@ function renderPainel(){
     '<div class="muted leg"><i style="background:var(--c-gord);margin-left:0"></i>Gordura<i style="background:var(--c-agua)"></i>Água<i style="background:var(--c-musc)"></i>Músculo</div>';
   $('#chartAtiv').innerHTML = barSemanas(A);
   renderSono(); renderFc(A);
+}
+
+// ---------- avaliações físicas ----------
+var DOBRAS = ['d_sub','d_tri','d_tor','d_axi','d_sup','d_abd','d_cox'];
+function idadeEm(data){
+  var n = S.data.config && S.data.config.nascimento; if (!n || !/^\d{4}-\d{2}-\d{2}/.test(String(n))) return null;
+  n = String(n).slice(0, 10); var a = +data.slice(0, 4) - +n.slice(0, 4); if (data.slice(5) < n.slice(5)) a--; return a;
+}
+function jp7(r){ // % de gordura, Jackson-Pollock 7 dobras (Siri)
+  var s = 0, ok = DOBRAS.every(function(k){ if (r[k] == null) return false; s += r[k]; return true; });
+  var id = idadeEm(r.data), sx = S.data.config && S.data.config.sexo;
+  if (!ok || id == null || id < 10 || (sx !== 'M' && sx !== 'F')) return null;
+  var dc = sx === 'M' ? 1.112 - 0.00043499 * s + 0.00000055 * s * s - 0.00028826 * id : 1.097 - 0.00046971 * s + 0.00000056 * s * s - 0.00012828 * id;
+  return 495 / dc - 450;
+}
+function renderAval(){
+  var V = sortAsc(S.data.avaliacao || []), el = $('#lAval');
+  if (!V.length){ el.innerHTML = '<p class="muted">Nenhuma avaliação lançada.</p>'; return; }
+  V.forEach(function(r){
+    r._soma = DOBRAS.every(function(k){ return r[k] != null; }) ? DOBRAS.reduce(function(a, k){ return a + r[k]; }, 0) : null;
+    r._jp = jp7(r); r._rcq = r.cintura && r.quadril ? r.cintura / r.quadril : null;
+  });
+  var L = [['peso','Peso (kg)',1],['gordura','Gordura laudo (%)',1],['_jp','Gordura calculada (%)',1],['_soma','Soma 7 dobras (mm)',0],
+    ['cintura','Cintura',1],['abdome','Abdome',1],['quadril','Quadril',1],['_rcq','RCQ',2],['torax','Tórax',1],
+    ['braco_e','Braço contr. E',1],['braco_d','Braço contr. D',1],['bracor_e','Braço relax. E',1],['bracor_d','Braço relax. D',1],
+    ['antebr_e','Antebraço E',1],['antebr_d','Antebraço D',1],['coxa_e','Coxa E',1],['coxa_d','Coxa D',1],['pant_e','Panturrilha E',1],['pant_d','Panturrilha D',1],
+    ['d_sub','Dobra subescapular',0],['d_tri','Dobra tríceps',0],['d_tor','Dobra tórax',0],['d_axi','Dobra axilar',0],['d_sup','Dobra supra-ilíaca',0],['d_abd','Dobra abdominal',0],['d_cox','Dobra coxa',0]];
+  var dif = V.length > 1, h = '<table><tr><th></th>' + V.map(function(r){ return '<th class="n clk" data-id="' + esc(r.id) + '">' + dBR(r.data) + '</th>'; }).join('') + (dif ? '<th class="n">Δ</th>' : '') + '</tr>';
+  L.forEach(function(c){
+    if (!V.some(function(r){ return r[c[0]] != null; })) return;
+    var a = V[V.length - 2], b = V[V.length - 1], d = dif && a[c[0]] != null && b[c[0]] != null ? b[c[0]] - a[c[0]] : null;
+    h += '<tr><td>' + c[1] + '</td>' + V.map(function(r){ return '<td class="n">' + fmt(r[c[0]], c[2]) + '</td>'; }).join('') +
+      (dif ? '<td class="n">' + (d == null ? '–' : (d > 0 ? '+' : '') + fmt(d, c[2])) + '</td>' : '') + '</tr>';
+  });
+  el.innerHTML = h + '</table>';
+  $$('th.clk', el).forEach(function(th){ th.addEventListener('click', function(){ editRow('avaliacao', th.dataset.id); }); });
 }
 
 function kpiS(l, v, s){ return '<li><span class="l">' + l + '</span><span class="v">' + v + (s ? '<span class="s">' + s + '</span>' : '') + '</span></li>'; }
