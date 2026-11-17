@@ -257,9 +257,10 @@ function hcSonoFases_(ss, uid, dias, bruto) {
   var h = function (ms) { return Math.round(ms / 360000) / 10; }, hm = function (t) { return Utilities.formatDate(new Date(t), TZ, 'HH:mm'); };
   Object.keys(porDia).forEach(function (d) {
     var b = porDia[d], tem = false, lin = [uid, d, hm(b[0]), hm(b[1]), h(b[1] - b[0])];
-    ['profundo', 'leve', 'rem', 'acordado'].forEach(function (k) {
-      var ms = sobrepoe_(fases[k] || [], b); if (ms) tem = true; lin.push(ms ? h(ms) : '');
-    });
+    // versões repetidas da noite fazem as fases se sobreporem: se a soma passar da noite, reduz na proporção
+    var ks = ['profundo', 'leve', 'rem', 'acordado'], ms = ks.map(function (k) { return sobrepoe_(fases[k] || [], b); });
+    var soma = ms.reduce(function (a, x) { return a + x; }, 0), fat = soma > b[1] - b[0] ? (b[1] - b[0]) / soma : 1;
+    ms.forEach(function (x) { if (x) tem = true; lin.push(x ? h(x * fat) : ''); });
     lin.push(new Date());
     var row = idx[uid + '|' + d];
     if (!row) { row = sh.getLastRow() + 1; idx[uid + '|' + d] = row; }
