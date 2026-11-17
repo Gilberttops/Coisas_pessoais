@@ -63,6 +63,13 @@ tr.clk{cursor:pointer} tr.clk:hover td{background:var(--pri2)}
 .msg.err{display:block;background:var(--card);color:var(--bad)} .msg.ok{display:block;background:var(--card);color:var(--good)}
 svg text{fill:var(--mut);font:500 11px Barlow,sans-serif}
 .hide{display:none}
+#quem{color:var(--mut);font-size:14px;margin-right:12px}
+.presets{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 12px}
+.presets button{border:1px solid var(--line);background:var(--card);color:var(--tx);border-radius:4px;padding:6px 10px;font:600 16px var(--num);cursor:pointer}
+.presets button.on{border-color:var(--tape);box-shadow:inset 0 -3px 0 var(--tape)}
+.ulist li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.ulist{list-style:none;margin:0 0 12px;padding:0}
+.ulist .btns{margin:0}.ulist .btn{min-height:36px;padding:6px 12px;font-size:14px}
 #login{max-width:360px;margin:48px auto}
 .chips{display:flex;gap:4px;margin-bottom:10px}
 .chips button{border:0;background:none;color:var(--mut);padding:4px 8px;font:500 14px Barlow,sans-serif;border-bottom:2px solid transparent;cursor:pointer}
@@ -73,7 +80,7 @@ svg text{fill:var(--mut);font:500 11px Barlow,sans-serif}
 </style>
 </head>
 <body>
-<header><h1>Saúde</h1><button id="sair" class="hide">Sair</button></header>
+<header><h1>Saúde</h1><div><span id="quem"></span><button id="sair" class="hide">Sair</button></div></header>
 
 <main>
   <div id="msg" class="msg"></div>
@@ -82,6 +89,7 @@ svg text{fill:var(--mut);font:500 11px Barlow,sans-serif}
     <h2>Entrar</h2>
     <form id="fLogin">
       <label id="lblUrl" class="hide">Endereço da planilha (URL que termina em /exec)<input name="url" type="url" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec"></label>
+      <label>Usuário<input name="login" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
       <label>Senha<input type="password" name="password" autocomplete="current-password" required></label>
       <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="remember" checked style="width:auto;margin:0"> Manter conectado neste aparelho</label>
       <button class="btn">Entrar</button>
@@ -91,10 +99,11 @@ svg text{fill:var(--mut);font:500 11px Barlow,sans-serif}
 
   <section id="tab-painel" class="tab hide">
     <div id="hero" class="hero"></div><ul class="stats" id="kpis"></ul>
+    <div class="card hide" id="cardMed"><h2>Remédio</h2><ul class="stats" id="kMed" style="margin:0"></ul></div>
     <div class="card"><h2>Peso</h2>
       <div class="chips" id="per"></div>
       <div id="chartPeso"></div>
-      <div class="muted">Pontos: cada pesagem. Linha cheia: média das últimas 7. Amarela: sua meta.</div>
+      <div class="muted">Pontos: cada pesagem. Linha cheia: média das últimas 7. Amarela: sua meta. Traços verticais: mudança de dose do remédio.</div>
     </div>
     <div class="card"><h2>Composição (balança)</h2><div id="chartComp"></div></div>
     <div class="card"><h2>Atividade: minutos por semana</h2><div id="chartAtiv"></div></div>
@@ -165,6 +174,25 @@ svg text{fill:var(--mut);font:500 11px Barlow,sans-serif}
     <div class="card"><h2>Histórico</h2><div class="tbl" id="lDia"></div></div>
   </section>
 
+  <section id="tab-medicacao" class="tab hide">
+    <div class="card"><h2 id="tMed">Nova aplicação</h2>
+      <form id="fMed" data-entity="medicacao">
+        <input type="hidden" name="id">
+        <div class="row">
+          <label>Data<input type="date" name="data" required></label>
+          <label>Remédio<select name="remedio" required><option>Tirzepatida</option><option>Semaglutida</option></select></label>
+          <label>Dose (mg)<input name="dose" inputmode="decimal" required></label>
+          <label>Local<select name="local"><option></option><option>Abdômen</option><option>Coxa</option><option>Braço</option></select></label>
+        </div>
+        <div class="presets" id="presets"></div>
+        <label>Obs (efeitos, lote…)<input name="obs" maxlength="300"></label>
+        <div class="btns"><button class="btn">Salvar</button><button type="button" class="btn sec cancel hide">Cancelar</button><button type="button" class="btn del hide">Excluir</button></div>
+      </form>
+      <p class="muted">Só registro. Dose e troca de dose são decisão do médico.</p>
+    </div>
+    <div class="card"><h2>Histórico</h2><div class="tbl" id="lMed"></div></div>
+  </section>
+
   <section id="tab-ajustes" class="tab hide">
     <div class="card"><h2>Seus dados</h2>
       <form id="fCfg">
@@ -179,11 +207,45 @@ svg text{fill:var(--mut);font:500 11px Barlow,sans-serif}
     </div>
     <div class="card"><h2>Relógio (Strava)</h2>
       <p class="muted" id="stravaInfo">Carregando…</p>
-      <div class="btns"><button class="btn sec" id="btnStrava" type="button">Buscar treinos agora</button></div>
+      <form id="fStrava" class="hide">
+        <p class="muted">Crie um app em strava.com/settings/api (pelo computador), com "Authorization Callback Domain" = script.google.com, e cole aqui:</p>
+        <div class="row">
+          <label>Client ID<input name="clientId" inputmode="numeric" autocomplete="off"></label>
+          <label>Client Secret<input name="clientSecret" type="password" autocomplete="off"></label>
+        </div>
+        <button class="btn sec">Salvar chaves</button>
+      </form>
+      <div class="btns">
+        <button class="btn sec hide" id="btnConectar" type="button">Conectar ao Strava</button>
+        <button class="btn sec hide" id="btnStrava" type="button">Buscar treinos agora</button>
+        <button class="btn del hide" id="btnDesc" type="button">Desconectar</button>
+      </div>
+    </div>
+    <div class="card"><h2>Trocar minha senha</h2>
+      <form id="fSenha">
+        <div class="row">
+          <label>Senha atual<input type="password" name="atual" autocomplete="current-password" required></label>
+          <label>Nova senha (mín. 8)<input type="password" name="nova" autocomplete="new-password" minlength="8" required></label>
+        </div>
+        <button class="btn sec">Trocar senha</button>
+      </form>
+    </div>
+    <div class="card hide" id="cardUsers"><h2>Usuários</h2>
+      <ul class="ulist" id="lUsers"></ul>
+      <form id="fUser">
+        <div class="row">
+          <label>Nome<input name="nome" maxlength="40" required></label>
+          <label>Usuário (para entrar)<input name="login" autocapitalize="none" spellcheck="false" required placeholder="ex.: ana"></label>
+          <label>Senha inicial (mín. 8)<input type="password" name="senha" autocomplete="new-password" minlength="8" required></label>
+          <label style="display:flex;gap:6px;align-items:center;margin-top:22px"><input type="checkbox" name="admin" style="width:auto;margin:0"> Administrador</label>
+        </div>
+        <button class="btn sec">Criar usuário</button>
+      </form>
+      <p class="muted">Cada usuário vê só os próprios dados. Passe a senha inicial pessoalmente; ela pode trocar em "Trocar minha senha".</p>
     </div>
     <div class="card"><h2>Backup</h2>
       <p class="muted">Os dados ficam na sua planilha Google. Aqui dá para baixar uma cópia em CSV.</p>
-      <div class="btns"><button class="btn sec" data-csv="peso">Peso CSV</button><button class="btn sec" data-csv="atividade">Atividades CSV</button><button class="btn sec" data-csv="diario">Diário CSV</button></div>
+      <div class="btns"><button class="btn sec" data-csv="peso">Peso CSV</button><button class="btn sec" data-csv="atividade">Atividades CSV</button><button class="btn sec" data-csv="diario">Diário CSV</button><button class="btn sec" data-csv="medicacao">Remédio CSV</button></div>
     </div>
   </section>
 </main>
@@ -193,6 +255,7 @@ svg text{fill:var(--mut);font:500 11px Barlow,sans-serif}
   <button data-tab="peso">Peso</button>
   <button data-tab="atividade">Atividade</button>
   <button data-tab="diario">Diário</button>
+  <button data-tab="medicacao">Remédio</button>
   <button data-tab="ajustes">Ajustes</button>
 </nav>
 
@@ -240,7 +303,7 @@ function sortAsc(a){ return sortDesc(a).reverse(); }
 // ---------- sessão ----------
 function getTok(){ try { var o = JSON.parse(localStorage.getItem(TOKEN_KEY) || 'null'); return o && o.exp > Date.now() ? o.t : null; } catch(e){ return null; } }
 function setTok(t, exp){ try { if (t) localStorage.setItem(TOKEN_KEY, JSON.stringify({t: t, exp: exp})); else localStorage.removeItem(TOKEN_KEY); } catch(e){} }
-function showLogin(){ var semUrl = NO_GOOGLE && !window.MOCK_API && !apiUrl(); $('#lblUrl').classList.toggle('hide', !semUrl); $('#trocarUrl').classList.toggle('hide', !NO_GOOGLE || semUrl || !!window.MOCK_API); S.t = null; S.data = null; setTok(null); ['#kpis','#chartPeso','#chartComp','#chartAtiv','#lPeso','#lAtiv','#lDia'].forEach(function(s){ $(s).innerHTML = ''; }); $('#fCfg').reset(); Object.keys(FORMS).forEach(resetForm); $('#login').classList.remove('hide'); $$('.tab').forEach(function(x){ x.classList.add('hide'); }); $('#nav').classList.add('hide'); $('#sair').classList.add('hide'); }
+function showLogin(){ var semUrl = NO_GOOGLE && !window.MOCK_API && !apiUrl(); $('#lblUrl').classList.toggle('hide', !semUrl); $('#trocarUrl').classList.toggle('hide', !NO_GOOGLE || semUrl || !!window.MOCK_API); S.t = null; S.data = null; setTok(null); ['#kpis','#kMed','#chartPeso','#chartComp','#chartAtiv','#lPeso','#lAtiv','#lDia','#lMed','#lUsers','#quem'].forEach(function(s){ $(s).innerHTML = ''; }); $('#fCfg').reset(); $('#fStrava').reset(); $('#fSenha').reset(); $('#fUser').reset(); $('#cardUsers').classList.add('hide'); Object.keys(FORMS).forEach(resetForm); try { $('#fLogin').login.value = localStorage.getItem('saude_login') || ''; } catch(e){} $('#login').classList.remove('hide'); $$('.tab').forEach(function(x){ x.classList.add('hide'); }); $('#nav').classList.add('hide'); $('#sair').classList.add('hide'); }
 function handleErr(r){ if (r && r.error === 'unauthorized'){ showLogin(); msg('Sessão expirada. Entre de novo.'); return true; } return false; }
 
 $('#fLogin').addEventListener('submit', function(e){
@@ -252,9 +315,10 @@ $('#fLogin').addEventListener('submit', function(e){
     try { localStorage.setItem(URL_KEY, u); } catch(err){ return msg('Este navegador não deixa salvar o endereço.'); }
   }
   b.disabled = true;
-  call({action: 'login', password: f.password.value, remember: f.remember.checked}).then(function(r){
+  call({action: 'login', login: f.login.value.trim(), password: f.password.value, remember: f.remember.checked}).then(function(r){
     b.disabled = false; f.password.value = '';
     if (!r.ok) return msg(r.message || 'Falha no login');
+    try { localStorage.setItem('saude_login', f.login.value.trim()); } catch(err){}
     S.t = r.token; if (f.remember.checked) setTok(r.token, r.exp); else setTok(null);
     $('#login').classList.add('hide'); start();
   }).catch(function(err){ b.disabled = false; msg(err.message); });
@@ -267,7 +331,9 @@ function start(){
   load().then(function(ok){ if (ok) go('painel'); });
 }
 function load(){
-  return call({action: 'load', t: S.t}).then(function(r){
+  var tk = S.t;
+  return call({action: 'load', t: tk}).then(function(r){
+    if (S.t !== tk) return false; // resposta de uma sessão anterior (saiu e entrou com outro usuário)
     if (!r.ok){ if (!handleErr(r)) msg(r.message || r.error); return false; }
     if (!S.t) return false;
     S.data = r; renderAll(); return true;
@@ -283,14 +349,29 @@ function go(tab){
 $$('#nav button').forEach(function(b){ b.addEventListener('click', function(){ go(b.dataset.tab); }); });
 
 // ---------- formulários ----------
-var FORMS = { peso: '#fPeso', atividade: '#fAtiv', diario: '#fDia' };
-var TITLES = { peso: ['#tPeso', 'Nova pesagem', 'Editar pesagem'], atividade: ['#tAtiv', 'Nova atividade', 'Editar atividade'], diario: ['#tDia', 'Registro do dia', 'Editar registro'] };
+var FORMS = { peso: '#fPeso', atividade: '#fAtiv', diario: '#fDia', medicacao: '#fMed' };
+var TITLES = { peso: ['#tPeso', 'Nova pesagem', 'Editar pesagem'], atividade: ['#tAtiv', 'Nova atividade', 'Editar atividade'], diario: ['#tDia', 'Registro do dia', 'Editar registro'], medicacao: ['#tMed', 'Nova aplicação', 'Editar aplicação'] };
 
 function resetForm(ent){
   var f = $(FORMS[ent]); f.reset(); f.id.value = ''; f.data.value = hoje();
   $('.cancel', f).classList.add('hide'); $('.del', f).classList.add('hide');
   $(TITLES[ent][0]).textContent = TITLES[ent][1];
+  if (ent === 'medicacao') prefillMed();
 }
+var DOSES = { Tirzepatida: [2.5, 5, 7.5, 10, 12.5, 15], Semaglutida: [0.25, 0.5, 1, 1.7, 2.4] };
+function ultMed(){ var m = sortDesc((S.data && S.data.medicacao) || []); return m[0] || null; }
+function prefillMed(){ // nova aplicação: repete remédio, dose e alterna o local da última
+  var f = $('#fMed'), u = ultMed();
+  if (u){ f.remedio.value = u.remedio; f.dose.value = String(u.dose).replace('.', ','); }
+  renderPresets();
+}
+function renderPresets(){
+  var f = $('#fMed'), atual = parseFloat(String(f.dose.value).replace(',', '.'));
+  $('#presets').innerHTML = (DOSES[f.remedio.value] || []).map(function(d){ return '<button type="button" data-d="' + d + '" class="' + (d === atual ? 'on' : '') + '">' + fmt(d, d < 1 ? 2 : 1).replace(/,0+$/, '') + ' mg</button>'; }).join('');
+  $$('#presets button').forEach(function(b){ b.addEventListener('click', function(){ f.dose.value = String(b.dataset.d).replace('.', ','); renderPresets(); }); });
+}
+$('#fMed').remedio.addEventListener('change', function(){ $('#fMed').dose.value = ''; renderPresets(); });
+$('#fMed').dose.addEventListener('input', renderPresets);
 function editRow(ent, id){
   var r = S.data[ent].filter(function(x){ return x.id === id; })[0]; if (!r) return;
   var f = $(FORMS[ent]); f.id.value = r.id;
@@ -300,12 +381,15 @@ function editRow(ent, id){
   });
   $('.cancel', f).classList.remove('hide'); $('.del', f).classList.remove('hide');
   $(TITLES[ent][0]).textContent = TITLES[ent][2];
+  if (ent === 'medicacao') renderPresets();
   f.scrollIntoView({behavior: 'smooth'});
 }
 function send(ent, kind, id, values, btn, opId){
   if (btn) btn.disabled = true;
-  return call({action: 'op', t: S.t, opId: opId || uid(), entity: ent, kind: kind, id: id, values: values}).then(function(r){
+  var tk = S.t;
+  return call({action: 'op', t: tk, opId: opId || uid(), entity: ent, kind: kind, id: id, values: values}).then(function(r){
     if (btn) btn.disabled = false;
+    if (S.t !== tk) return false;
     if (!r.ok){ if (!handleErr(r)) msg(r.message || r.error); return false; }
     msg(kind === 'remove' ? 'Excluído.' : 'Salvo.', true);
     return load().then(function(){ return true; });
@@ -352,10 +436,13 @@ function renderAll(){
   table('peso', [['data','Data'],['peso','Peso',1],['gordura','Gord%',1],['agua','Água%',1],['musculo','Músc%',1],['cintura','Cint',0]], '#lPeso');
   table('atividade', [['data','Data'],['tipo','Tipo'],['minutos','Min',0],['distancia','km',1],['kcal','Kcal',0]], '#lAtiv');
   table('diario', [['data','Data'],['sono','Sono',1],['passos','Passos',0],['pa_sis','PA s',0],['pa_dia','PA d',0],['fc_rep','FC',0]], '#lDia');
-  var st = S.data.strava || {};
-  $('#stravaInfo').textContent = !st.conectado ? 'Strava ainda não conectado. Siga o LEIA-ME para ligar pelo menu da planilha.'
-    : 'Conectado. Os treinos chegam sozinhos de hora em hora' + (st.ultima ? '. Última busca: ' + st.ultima + '.' : '.');
-  $('#btnStrava').disabled = !st.conectado;
+  table('medicacao', [['data','Data'],['remedio','Remédio'],['dose','mg',2],['local','Local']], '#lMed');
+  var me = S.data.me || {};
+  $('#quem').textContent = me.nome || '';
+  $('#cardUsers').classList.toggle('hide', !me.admin);
+  if (me.admin) loadUsers();
+  renderStrava(S.data.strava || {});
+  if (!$('#fMed').id.value) prefillMed();
   var c = S.data.config || {}, f = $('#fCfg');
   f.altura.value = c.altura ? String(c.altura).replace('.', ',') : '';
   f.meta.value = c.meta ? String(c.meta).replace('.', ',') : '';
@@ -391,6 +478,18 @@ function renderPainel(){
   var nd = Object.keys(dias).length;
   k += kpi('Exercício na semana', fmt(min, 0) + ' min', nd + (nd === 1 ? ' dia ativo' : ' dias ativos') + ', a OMS recomenda 150 min', min >= 150 ? 'down' : '');
   $('#kpis').innerHTML = k;
+  var M = sortAsc(S.data.medicacao || []), um = M[M.length - 1];
+  $('#cardMed').classList.toggle('hide', !um);
+  if (um){
+    var prox = addDias(um.data, 7), atras = prox < hoje(), km = '';
+    var semanas = M.filter(function(x){ return x.remedio === um.remedio && x.dose === um.dose; }).length;
+    km += kpi(um.remedio, fmt(um.dose, um.dose < 1 ? 2 : 1) + ' mg', semanas + (semanas === 1 ? ' aplicação' : ' aplicações') + ' nesta dose');
+    km += kpi('Última aplicação', dBR(um.data), um.local ? um.local : '');
+    km += kpi('Próxima (7 dias)', dBR(prox), atras ? 'Passou da data' : prox === hoje() ? 'Hoje' : '', atras ? 'up' : '');
+    $('#kMed').innerHTML = km;
+  }
+  var marcas = [];
+  M.forEach(function(x, i){ var a = M[i - 1]; if (!a || a.dose !== x.dose || a.remedio !== x.remedio) marcas.push({data: x.data, t: x.remedio + ' ' + fmt(x.dose, x.dose < 1 ? 2 : 1) + ' mg'}); });
 
   $('#per').innerHTML = [[30,'30 d'],[90,'90 d'],[365,'1 ano'],[0,'Tudo']].map(function(p){ return '<button data-p="' + p[0] + '" class="' + (S.periodo === p[0] ? 'on' : '') + '">' + p[1] + '</button>'; }).join('');
   $$('#per button').forEach(function(b){ b.addEventListener('click', function(){ S.periodo = +b.dataset.p; renderPainel(); }); });
@@ -400,7 +499,7 @@ function renderPainel(){
   $('#chartPeso').innerHTML = lineChart([
     {pts: Pp.map(function(x){ return {data: x.data, v: x.peso}; }), w: 1.2, dots: true, op: .6},
     {pts: mm, w: 3}
-  ], c.meta ? Number(c.meta) : null);
+  ], c.meta ? Number(c.meta) : null, '', marcas.filter(function(m){ return m.data >= lim; }));
   var comp = ['gordura','agua','musculo'], cores = ['var(--c-gord)','var(--c-agua)','var(--c-musc)'];
   $('#chartComp').innerHTML = lineChart(comp.map(function(f, i){ return {pts: Pp.filter(function(x){ return x[f] != null; }).map(function(x){ return {data: x.data, v: x[f]}; }), w: 2, cor: cores[i], dots: true}; }), null, '%') +
     '<div class="muted leg"><i style="background:var(--c-gord);margin-left:0"></i>Gordura<i style="background:var(--c-agua)"></i>Água<i style="background:var(--c-musc)"></i>Músculo</div>';
@@ -423,7 +522,7 @@ function regua(inicio, atual, meta){
   var falta = atual - meta;
   return '<div class="regua">' + g + '</svg><div class="leg"><span>Começou com ' + fmt(inicio) + ' kg</span><span>' + (Math.abs(falta) < 0.05 ? 'Meta atingida' : (falta > 0 ? 'Faltam ' + fmt(falta) : 'Passou ' + fmt(-falta)) + ' kg para a meta de ' + fmt(meta)) + '</span></div></div>';
 }
-function lineChart(series, meta, unid){
+function lineChart(series, meta, unid, marcas){
   var all = []; series.forEach(function(s){ all = all.concat(s.pts); });
   if (!all.length) return '<p class="muted">Sem dados no período.</p>';
   var W = 420, H = 210, L = 36, R = 8, T = 10, B = 22;
@@ -437,6 +536,8 @@ function lineChart(series, meta, unid){
   for (var i = 0; i <= 4; i++){ var v = y0 + (y1 - y0) * i / 4, y = Y(v); g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y + '" y2="' + y + '" stroke="currentColor" opacity=".08"/><text x="' + (L - 4) + '" y="' + (y + 3) + '" text-anchor="end">' + fmt(v, 1) + (unid || '') + '</text>'; }
   [x0, (x0 + x1) / 2, x1].forEach(function(t, i){ var d = new Date(t); g += '<text x="' + (L + i * (W - L - R) / 2) + '" y="' + (H - 6) + '" text-anchor="' + ['start','middle','end'][i] + '">' + d.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit', year: '2-digit'}) + '</text>'; });
   if (meta != null) g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + Y(meta) + '" y2="' + Y(meta) + '" stroke="var(--tape)" stroke-width="2" stroke-dasharray="6 4"/>';
+  (marcas || []).forEach(function(m){ var t = dt(m.data).getTime(); if (t < x0 || t > x1) return; var x = X(m.data).toFixed(1);
+    g += '<line x1="' + x + '" x2="' + x + '" y1="' + T + '" y2="' + (H - B) + '" stroke="var(--mut)" stroke-width="1" stroke-dasharray="2 3"><title>' + dBR(m.data) + ': ' + esc(m.t) + '</title></line><text x="' + (+x + 3) + '" y="' + (T + 9) + '">' + esc(m.t.replace(/^\S+ /, '')) + '</text>'; });
   series.forEach(function(s){
     if (!s.pts.length) return;
     var cor = s.cor || 'var(--pri)';
@@ -457,6 +558,79 @@ function barSemanas(A){
     if (i % 2 === 1) g += '<text x="' + (x + (bw - 8) / 2) + '" y="' + (H - 6) + '" text-anchor="middle">' + dBR(s.fim).slice(0, 5) + '</text>'; });
   return g + '</svg>';
 }
+
+function renderStrava(st){
+  $('#stravaInfo').textContent = st.conectado ? 'Conectado. Os treinos chegam sozinhos de hora em hora' + (st.ultima ? '. Última busca: ' + st.ultima + '.' : '.')
+    : st.configurado ? 'Chaves salvas. Falta conectar: toque em "Conectar ao Strava", autorize e volte aqui.'
+    : 'Leva os treinos do relógio (Mi Fitness → Strava) para o app sem digitar.';
+  $('#fStrava').classList.toggle('hide', !!st.conectado);
+  $('#btnConectar').classList.toggle('hide', !st.configurado || !!st.conectado);
+  $('#btnStrava').classList.toggle('hide', !st.conectado);
+  $('#btnDesc').classList.toggle('hide', !st.configurado);
+}
+function simples(action, extra, btn){ // chamada que não grava registro de saúde
+  if (btn) btn.disabled = true;
+  var body = {action: action, t: S.t}; Object.keys(extra || {}).forEach(function(k){ body[k] = extra[k]; });
+  var tk = S.t;
+  return call(body).then(function(r){
+    if (btn) btn.disabled = false;
+    if (S.t !== tk) return null;
+    if (!r.ok){ if (!handleErr(r)) msg(r.message || r.error); return null; }
+    return r;
+  }).catch(function(e){ if (btn) btn.disabled = false; msg(e.message); return null; });
+}
+$('#fStrava').addEventListener('submit', function(e){
+  e.preventDefault(); var f = e.target;
+  simples('stravaSetup', {values: {clientId: f.clientId.value.trim(), clientSecret: f.clientSecret.value.trim()}}, $('button', f)).then(function(r){
+    if (!r) return; f.reset(); S.data.strava = r.strava; renderStrava(r.strava); msg('Chaves salvas. Agora conecte.', true);
+  });
+});
+$('#btnConectar').addEventListener('click', function(){
+  var w = window.open('', '_blank'); // abre já no clique (o celular bloqueia janela aberta depois)
+  simples('stravaLink', {}, this).then(function(r){
+    if (!r){ if (w) w.close(); return; }
+    if (w) w.location.href = r.url; else location.href = r.url;
+    msg('Autorize no Strava e volte aqui. Depois toque em Sair e entre de novo, ou recarregue.', true);
+  });
+});
+$('#btnDesc').addEventListener('click', function(){
+  if (!confirm('Desconectar o Strava? Os treinos já trazidos continuam no app.')) return;
+  simples('stravaDisconnect', {}, this).then(function(r){ if (r){ S.data.strava = r.strava; renderStrava(r.strava); msg('Strava desconectado.', true); } });
+});
+$('#fSenha').addEventListener('submit', function(e){
+  e.preventDefault(); var f = e.target;
+  if (f.nova.value.length < 8) return msg('Nova senha com no mínimo 8 caracteres.');
+  simples('changePassword', {atual: f.atual.value, nova: f.nova.value}, $('button', f)).then(function(r){
+    f.reset(); if (!r) return;
+    showLogin(); msg('Senha trocada. Entre de novo com a nova senha.', true);
+  });
+});
+function loadUsers(){
+  simples('users', {}).then(function(r){
+    if (!r) return; var me = (S.data && S.data.me) || {};
+    $('#lUsers').innerHTML = r.users.map(function(u){
+      var eu = u.id === me.id;
+      return '<li><span><b>' + esc(u.nome) + '</b> <span class="muted">' + esc(u.login) + (u.admin ? ', administrador' : '') + (u.ativo ? '' : ', desativado') + (eu ? ' (você)' : '') + '</span></span>' +
+        '<span class="btns"><button class="btn sec" data-reset="' + esc(u.id) + '">Nova senha</button>' +
+        (eu ? '' : '<button class="btn ' + (u.ativo ? 'del' : 'sec') + '" data-ativo="' + esc(u.id) + '" data-v="' + (u.ativo ? '0' : '1') + '">' + (u.ativo ? 'Desativar' : 'Reativar') + '</button>') + '</span></li>';
+    }).join('');
+    $$('[data-reset]', $('#lUsers')).forEach(function(b){ b.addEventListener('click', function(){
+      var pw = prompt('Nova senha (mínimo 8 caracteres). Passe para a pessoa pessoalmente:'); if (pw == null) return;
+      if (pw.length < 8) return msg('Senha muito curta.');
+      simples('userAdmin', {kind: 'reset', id: b.dataset.reset, values: {senha: pw}}, b).then(function(r){ if (!r) return; if (r.relogin){ showLogin(); msg('Senha trocada. Entre de novo.', true); } else msg('Senha redefinida.', true); });
+    }); });
+    $$('[data-ativo]', $('#lUsers')).forEach(function(b){ b.addEventListener('click', function(){
+      var on = b.dataset.v === '1'; if (!on && !confirm('Desativar este usuário? Os dados dele continuam na planilha.')) return;
+      simples('userAdmin', {kind: 'ativo', id: b.dataset.ativo, values: {ativo: on}}, b).then(function(r){ if (r){ msg(on ? 'Usuário reativado.' : 'Usuário desativado.', true); loadUsers(); } });
+    }); });
+  });
+}
+$('#fUser').addEventListener('submit', function(e){
+  e.preventDefault(); var f = e.target;
+  simples('userAdmin', {kind: 'create', values: {nome: f.nome.value.trim(), login: f.login.value.trim(), senha: f.senha.value, admin: f.admin.checked}}, $('button', f)).then(function(r){
+    if (!r) return; f.reset(); msg('Usuário criado.', true); loadUsers();
+  });
+});
 
 $('#btnStrava').addEventListener('click', function(){
   var b = this; b.disabled = true;

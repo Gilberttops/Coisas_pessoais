@@ -1,12 +1,10 @@
 /**
- * Integração Strava (treinos do relógio via Mi Fitness → Strava) e importação do histórico do Mi Fitness.
- * Usa as funções de Code.gs: SCHEMA, validate_, sheetFor_, auditLog_, props_, TZ, hoje_, parseNumCampo_.
+ * Integração Strava (treinos do relógio via Mi Fitness → Strava) e importação do histórico do Mi Fitness, por usuário.
+ * Usa as funções de Code.gs: SCHEMA, validate_, sheetFor_, auditLog_, props_, TZ, readUsers_, userById_, normLogin_, safeEquals_.
  *
- * PRIMEIRO USO (depois da implantação do app):
- * 1. strava.com/settings/api → criar app. "Authorization Callback Domain" = script.google.com
- * 2. Menu Saúde > Strava: configurar chaves (Client ID e Client Secret)
- * 3. Menu Saúde > Strava: conectar conta → abrir o link → Autorizar
- * 4. Menu Saúde > Strava: ativar sincronização automática (de hora em hora)
+ * Cada usuário tem o próprio app no Strava (app novo no Strava aceita só 1 atleta) e configura no app Saúde:
+ * Ajustes > Relógio (Strava): colar Client ID e Client Secret > Conectar. A sincronização de hora em hora
+ * é ligada uma vez pelo administrador no menu da planilha e passa por todos os usuários conectados.
  */
 var STRAVA = { AUTH: 'https://www.strava.com/oauth/authorize', TOKEN: 'https://www.strava.com/oauth/token', API: 'https://www.strava.com/api/v3' };
 var STRAVA_TIPOS = { Run: 'Corrida', TrailRun: 'Corrida', VirtualRun: 'Corrida', Walk: 'Caminhada', Hike: 'Trilha', Ride: 'Bicicleta',
@@ -15,81 +13,85 @@ var STRAVA_TIPOS = { Run: 'Corrida', TrailRun: 'Corrida', VirtualRun: 'Corrida',
   Yoga: 'Alongamento', Pilates: 'Alongamento', StairStepper: 'Escada', Elliptical: 'Elíptico', Rowing: 'Remo', Volleyball: 'Vôlei',
   Basketball: 'Basquete', Golf: 'Golfe', Tennis: 'Tênis' };
 var DUP_SEGUNDOS = 180; // mesmo treino vindo de duas fontes: início com até 3 min de diferença
+var SK = ['CLIENT_ID', 'CLIENT_SECRET', 'ACCESS', 'REFRESH', 'EXP', 'AFTER', 'LAST'];
+function sk_(uid, k) { return 'STRAVA_' + uid + '_' + k; }
+function sget_(uid, k) { return props_().getProperty(sk_(uid, k)); }
+function sset_(uid, k, v) { props_().setProperty(sk_(uid, k), String(v)); }
+function sdel_(uid, k) { props_().deleteProperty(sk_(uid, k)); }
+
+// ---------- Pelo app (Ajustes) ----------
+function stravaSetup_(u, v) {
+  var id = String(v.clientId || '').trim(), sec = String(v.clientSecret || '').trim();
+  if (!/^\d{1,12}$/.test(id)) return { ok: false, error: 'validacao', message: 'Client ID inválido (só números).' };
+  if (!/^[a-f0-9]{20,64}$/i.test(sec)) return { ok: false, error: 'validacao', message: 'Client Secret inválido.' };
+  sset_(u.id, 'CLIENT_ID', id); sset_(u.id, 'CLIENT_SECRET', sec);
+  ['ACCESS', 'REFRESH', 'EXP', 'AFTER', 'LAST'].forEach(function (k) { sdel_(u.id, k); }); // conta nova: busca inicial de 30 dias
+  auditLog_('update', 'strava', u.id, null, { chaves: 'salvas' }, '', u.id);
+  return { ok: true, strava: stravaStatus_(u.id) };
+}
+function stravaLink_(u) {
+  var id = sget_(u.id, 'CLIENT_ID');
+  if (!id) return { ok: false, error: 'validacao', message: 'Salve antes o Client ID e o Client Secret.' };
+  var url = ScriptApp.getService().getUrl();
+  if (!url) return { ok: false, error: 'falha', message: 'App ainda não implantado.' };
+  var state = Utilities.getUuid().replace(/-/g, '');
+  CacheService.getScriptCache().put('strava_state_' + state, u.id, 900);
+  return { ok: true, url: STRAVA.AUTH + '?client_id=' + encodeURIComponent(id) + '&response_type=code&approval_prompt=force&scope=activity:read_all' +
+    '&redirect_uri=' + encodeURIComponent(url) + '&state=' + state };
+}
+function stravaDisconnect_(u) {
+  SK.forEach(function (k) { sdel_(u.id, k); });
+  auditLog_('update', 'strava', u.id, null, { desconectado: true }, '', u.id);
+  return { ok: true, strava: stravaStatus_(u.id) };
+}
+function stravaStatus_(uid) {
+  return { configurado: !!sget_(uid, 'CLIENT_ID'), conectado: !!sget_(uid, 'REFRESH'), ultima: sget_(uid, 'LAST') || '' };
+}
 
 // ---------- Menu (getUi() primeiro: chamadas pelo app web falham antes de fazer qualquer coisa) ----------
-function configurarStrava() {
-  var ui = SpreadsheetApp.getUi();
-  var a = ui.prompt('Strava: Client ID', 'Em strava.com/settings/api', ui.ButtonSet.OK_CANCEL);
-  if (a.getSelectedButton() !== ui.Button.OK || !/^\d+$/.test(a.getResponseText().trim())) { ui.alert('Client ID inválido. Nada foi alterado.'); return; }
-  var b = ui.prompt('Strava: Client Secret', 'Copie o "Client Secret" da mesma página.', ui.ButtonSet.OK_CANCEL);
-  if (b.getSelectedButton() !== ui.Button.OK || !/^[a-f0-9]{20,64}$/i.test(b.getResponseText().trim())) { ui.alert('Client Secret inválido. Nada foi alterado.'); return; }
-  var p = props_();
-  p.setProperty('STRAVA_CLIENT_ID', a.getResponseText().trim());
-  p.setProperty('STRAVA_CLIENT_SECRET', b.getResponseText().trim());
-  ['STRAVA_REFRESH', 'STRAVA_ACCESS', 'STRAVA_EXP'].forEach(function (k) { p.deleteProperty(k); });
-  ui.alert('Chaves salvas. Agora use "Conectar conta".');
-}
-function conectarStrava() {
-  var ui = SpreadsheetApp.getUi(), id = props_().getProperty('STRAVA_CLIENT_ID');
-  if (!id) { ui.alert('Configure as chaves primeiro.'); return; }
-  var url = ScriptApp.getService().getUrl();
-  if (!url) { ui.alert('Implante o app da Web primeiro (Implantar > Nova implantação).'); return; }
-  var state = Utilities.getUuid().replace(/-/g, '');
-  CacheService.getScriptCache().put('strava_state', state, 900);
-  var link = STRAVA.AUTH + '?client_id=' + encodeURIComponent(id) + '&response_type=code&approval_prompt=force&scope=activity:read_all' +
-    '&redirect_uri=' + encodeURIComponent(url) + '&state=' + state;
-  ui.showModalDialog(HtmlService.createHtmlOutput('<p style="font-family:sans-serif">Abra o link, autorize e volte aqui. O link vale 15 minutos.</p>' +
-    '<p><a style="font:600 16px sans-serif" target="_blank" href="' + link + '">Autorizar no Strava</a></p>').setWidth(380).setHeight(140), 'Conectar Strava');
-}
 function ativarSyncStrava() {
   var ui = SpreadsheetApp.getUi();
   ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'syncStravaAgendado') ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('syncStravaAgendado').timeBased().everyHours(1).create();
-  ui.alert('Sincronização automática ligada: de hora em hora.');
-}
-function sincronizarStravaMenu() {
-  var ui = SpreadsheetApp.getUi(), r = sincronizarStrava_(true);
-  ui.alert(r.ok ? 'Strava: ' + r.novos + ' treino(s) novo(s).' : 'Strava: ' + (r.message || r.error));
+  ui.alert('Sincronização automática ligada: de hora em hora, para todos os usuários conectados ao Strava.');
 }
 // Gatilho de hora em hora. Chamado de outro jeito (ex.: google.script.run), não faz nada:
 // exige o triggerUid de um gatilho existente deste projeto.
 function syncStravaAgendado(e) {
-  var uid = e && e.triggerUid ? String(e.triggerUid) : '';
-  if (!uid || !ScriptApp.getProjectTriggers().some(function (t) { return t.getUniqueId() === uid; })) return;
-  sincronizarStrava_(false);
+  var tid = e && e.triggerUid ? String(e.triggerUid) : '';
+  if (!tid || !ScriptApp.getProjectTriggers().some(function (t) { return t.getUniqueId() === tid; })) return;
+  readUsers_().forEach(function (u) { if (u.ativo && sget_(u.id, 'REFRESH')) sincronizarStrava_(u.id, false); });
 }
 
 // ---------- OAuth ----------
 function stravaCallback_(e) {
-  var p = e.parameter, cache = CacheService.getScriptCache(), st = cache.get('strava_state');
+  var p = e.parameter, cache = CacheService.getScriptCache();
   function pagina(t) { return HtmlService.createHtmlOutput('<p style="font:16px sans-serif;padding:24px">' + t + '</p>').setTitle('Strava'); }
-  if (!st || !p.state || !safeEquals_(p.state, st)) return pagina('Link expirado ou inválido. Gere um novo pelo menu da planilha.');
-  cache.remove('strava_state');
+  if (!/^[a-f0-9]{32}$/.test(String(p.state || ''))) return pagina('Link inválido.');
+  var uid = cache.get('strava_state_' + p.state);
+  if (!uid || !userById_(uid)) return pagina('Link expirado ou inválido. Gere um novo no app (Ajustes > Relógio).');
+  cache.remove('strava_state_' + p.state);
   if (p.error || !p.code) return pagina('Autorização cancelada.');
   if (String(p.scope || '').indexOf('activity:read') < 0) return pagina('Faltou permitir a leitura das atividades. Tente de novo e deixe a opção marcada.');
-  var r = tokenRequest_({ code: p.code, grant_type: 'authorization_code' });
+  var r = tokenRequest_(uid, { code: p.code, grant_type: 'authorization_code' });
   if (!r.ok) return pagina('Falha ao conectar: ' + r.message);
-  var pr = props_();
-  if (!pr.getProperty('STRAVA_AFTER')) pr.setProperty('STRAVA_AFTER', String(Math.floor(Date.now() / 1000) - 30 * 86400));
-  return pagina('Strava conectado. Pode fechar esta aba.');
+  if (!sget_(uid, 'AFTER')) sset_(uid, 'AFTER', Math.floor(Date.now() / 1000) - 30 * 86400);
+  return pagina('Strava conectado. Pode fechar esta aba e voltar ao app.');
 }
-function tokenRequest_(extra) {
-  var pr = props_(), payload = { client_id: pr.getProperty('STRAVA_CLIENT_ID'), client_secret: pr.getProperty('STRAVA_CLIENT_SECRET') };
+function tokenRequest_(uid, extra) {
+  var payload = { client_id: sget_(uid, 'CLIENT_ID'), client_secret: sget_(uid, 'CLIENT_SECRET') };
   Object.keys(extra).forEach(function (k) { payload[k] = extra[k]; });
   var res = UrlFetchApp.fetch(STRAVA.TOKEN, { method: 'post', payload: payload, muteHttpExceptions: true });
   if (res.getResponseCode() !== 200) return { ok: false, message: 'Strava respondeu ' + res.getResponseCode() };
   var j = JSON.parse(res.getContentText());
-  pr.setProperty('STRAVA_ACCESS', j.access_token);
-  pr.setProperty('STRAVA_REFRESH', j.refresh_token);
-  pr.setProperty('STRAVA_EXP', String(j.expires_at));
+  sset_(uid, 'ACCESS', j.access_token); sset_(uid, 'REFRESH', j.refresh_token); sset_(uid, 'EXP', j.expires_at);
   return { ok: true };
 }
-function accessToken_() {
-  var pr = props_();
-  if (!pr.getProperty('STRAVA_REFRESH')) return null;
-  if (parseInt(pr.getProperty('STRAVA_EXP') || '0', 10) - 120 > Date.now() / 1000) return pr.getProperty('STRAVA_ACCESS');
-  var r = tokenRequest_({ grant_type: 'refresh_token', refresh_token: pr.getProperty('STRAVA_REFRESH') });
-  return r.ok ? pr.getProperty('STRAVA_ACCESS') : null;
+function accessToken_(uid) {
+  if (!sget_(uid, 'REFRESH')) return null;
+  if (parseInt(sget_(uid, 'EXP') || '0', 10) - 120 > Date.now() / 1000) return sget_(uid, 'ACCESS');
+  var r = tokenRequest_(uid, { grant_type: 'refresh_token', refresh_token: sget_(uid, 'REFRESH') });
+  return r.ok ? sget_(uid, 'ACCESS') : null;
 }
 function stravaGet_(path, tok) {
   var res = UrlFetchApp.fetch(STRAVA.API + path, { headers: { Authorization: 'Bearer ' + tok }, muteHttpExceptions: true });
@@ -98,25 +100,20 @@ function stravaGet_(path, tok) {
   if (c !== 200) throw new Error('Strava respondeu ' + c);
   return JSON.parse(res.getContentText());
 }
-function stravaStatus_() {
-  var pr = props_();
-  return { configurado: !!pr.getProperty('STRAVA_CLIENT_ID'), conectado: !!pr.getProperty('STRAVA_REFRESH'), ultima: pr.getProperty('STRAVA_LAST') || '' };
-}
 
-// ---------- Sincronização ----------
-function sincronizarStrava_(forcar) {
-  var cache = CacheService.getScriptCache();
-  if (!forcar && cache.get('strava_busy')) return { ok: true, novos: 0 };
-  cache.put('strava_busy', '1', 120);
+// ---------- Sincronização (de um usuário) ----------
+function sincronizarStrava_(uid, forcar) {
+  var cache = CacheService.getScriptCache(), busy = 'strava_busy_' + uid;
+  if (!forcar && cache.get(busy)) return { ok: true, novos: 0, strava: stravaStatus_(uid) };
+  cache.put(busy, '1', 120);
   var lock = LockService.getScriptLock();
   try { lock.waitLock(20000); } catch (e) { return { ok: false, error: 'ocupado', message: 'Planilha ocupada, tente de novo.' }; }
-  var pr = props_();
   try {
-    var tok = accessToken_();
+    var tok = accessToken_(uid);
     if (!tok) return { ok: false, error: 'strava_desconectado', message: 'Strava não conectado.' };
-    var cursor = parseInt(pr.getProperty('STRAVA_AFTER') || '0', 10);
+    var cursor = parseInt(sget_(uid, 'AFTER') || '0', 10);
     var desde = Math.max(0, cursor - 3 * 86400); // revê 3 dias: pega treino enviado com atraso; o ID barra repetidos
-    var ss = SpreadsheetApp.getActiveSpreadsheet(), imp = importados_(ss), novos = [], maxIni = cursor, aviso = '';
+    var ss = SpreadsheetApp.getActiveSpreadsheet(), imp = importados_(ss, uid), novos = [], maxIni = cursor, aviso = '';
     try {
       for (var page = 1; page <= 10; page++) {
         var lista = stravaGet_('/athlete/activities?per_page=50&page=' + page + '&after=' + desde, tok);
@@ -144,12 +141,12 @@ function sincronizarStrava_(forcar) {
     } catch (e) {
       aviso = String(e && e.message ? e.message : e); // grava o que já veio; o resto entra na próxima rodada
     }
-    gravarComRegistro_(ss, imp.sheet, novos.map(function (n) { return { ini: n.ini, origem: 'Strava', chave: n.sid, values: n.values }; }));
+    gravarComRegistro_(ss, imp.sheet, uid, novos.map(function (n) { return { ini: n.ini, origem: 'Strava', chave: n.sid, values: n.values }; }));
     // A API devolve do mais antigo para o mais novo quando há "after": o cursor só passa do que foi processado.
-    pr.setProperty('STRAVA_AFTER', String(Math.max(cursor, maxIni)));
-    pr.setProperty('STRAVA_LAST', Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm'));
+    sset_(uid, 'AFTER', Math.max(cursor, maxIni));
+    sset_(uid, 'LAST', Utilities.formatDate(new Date(), TZ, 'dd/MM/yyyy HH:mm'));
     if (aviso && !novos.length) return { ok: false, error: 'falha', message: aviso };
-    return { ok: true, novos: novos.length, aviso: aviso };
+    return { ok: true, novos: novos.length, aviso: aviso, strava: stravaStatus_(uid) };
   } catch (err) {
     return { ok: false, error: 'falha', message: String(err && err.message ? err.message : err) };
   } finally {
@@ -164,12 +161,16 @@ function importarHistoricoMiFitness() {
   var ui = SpreadsheetApp.getUi(), ss = SpreadsheetApp.getActiveSpreadsheet();
   var shA = ss.getSheetByName('mifit_atividades'), shD = ss.getSheetByName('mifit_diario');
   if (!shA && !shD) { ui.alert('Importe antes os arquivos mifit_atividades.csv e mifit_diario.csv (Arquivo > Importar > Inserir nova página).'); return; }
+  var resp = ui.prompt('Importar histórico do Mi Fitness', 'Para qual usuário? (o login, ex.: gilberto)', ui.ButtonSet.OK_CANCEL);
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  var u = readUsers_().filter(function (x) { return x.login === normLogin_(resp.getResponseText()); })[0];
+  if (!u) { ui.alert('Usuário não encontrado. Nada foi importado.'); return; }
   var lock = LockService.getScriptLock();
   try { lock.waitLock(30000); } catch (e) { ui.alert('Planilha ocupada, tente de novo.'); return; }
   var rel = [];
   try {
     if (shA) {
-      var imp = importados_(ss), chaves = imp.todos, lote = {}, novos = [], ruins = 0, dup = 0; // lote: dentro do arquivo, só início idêntico
+      var imp = importados_(ss, u.id), chaves = imp.todos, lote = {}, novos = [], ruins = 0, dup = 0; // lote: dentro do arquivo, só início idêntico
       linhas_(shA).forEach(function (r) {
         var ini = parseInt(r.inicio, 10);
         if (!ini) { ruins++; return; }
@@ -180,12 +181,14 @@ function importarHistoricoMiFitness() {
         if (!v.ok) { ruins++; return; }
         lote[ini] = 1; novos.push({ ini: ini, values: v.values });
       });
-      gravarComRegistro_(ss, imp.sheet, novos.map(function (n) { return { ini: n.ini, origem: 'Mi Fitness', chave: 'mifit:' + n.ini, values: n.values }; }));
+      gravarComRegistro_(ss, imp.sheet, u.id, novos.map(function (n) { return { ini: n.ini, origem: 'Mi Fitness', chave: 'mifit:' + n.ini, values: n.values }; }));
       rel.push('Treinos: ' + novos.length + ' importados, ' + dup + ' já existiam, ' + ruins + ' recusados');
     }
     if (shD) {
       var shDia = sheetFor_(ss, SCHEMA.diario), existentes = {}, novosD = [], ruinsD = 0, dupD = 0;
-      if (shDia.getLastRow() >= 2) shDia.getRange(2, 2, shDia.getLastRow() - 1, 1).getDisplayValues().forEach(function (x) { existentes[dataTxt_(x[0])] = 1; });
+      if (shDia.getLastRow() >= 2) shDia.getRange(2, 2, shDia.getLastRow() - 1, 2).getDisplayValues().forEach(function (x) {
+        if (String(x[0]) === u.id) existentes[dataTxt_(x[1])] = 1;
+      });
       linhas_(shD).forEach(function (r) {
         var d = dataTxt_(r.data);
         if (existentes[d]) { dupD++; return; }
@@ -194,14 +197,14 @@ function importarHistoricoMiFitness() {
         if (!v.ok) { ruinsD++; return; }
         existentes[d] = 1; novosD.push(v.values);
       });
-      gravarLote_(ss, SCHEMA.diario, novosD);
+      gravarLote_(ss, SCHEMA.diario, u.id, novosD);
       rel.push('Diário: ' + novosD.length + ' dias importados, ' + dupD + ' já existiam, ' + ruinsD + ' recusados');
     }
-    auditLog_('import', 'mifitness', '', null, { resumo: rel }, '');
+    auditLog_('import', 'mifitness', '', null, { resumo: rel }, '', u.id);
   } finally {
     lock.releaseLock();
   }
-  ui.alert(rel.join('\n') + '\n\nPode apagar as abas mifit_atividades e mifit_diario.');
+  ui.alert('Importado para ' + u.nome + ':\n' + rel.join('\n') + '\n\nPode apagar as abas mifit_atividades e mifit_diario.');
 }
 
 // ---------- Utilitários ----------
@@ -215,15 +218,19 @@ function dataTxt_(s) {
   var m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
   return m ? m[3] + '-' + m[2] + '-' + m[1] : s;
 }
-function importados_(ss) {
+// Importados: Início (epoch) | Origem | ID | Quando | Chave | Usuário  (só as linhas do usuário contam)
+function importados_(ss, uid) {
   var sh = ss.getSheetByName('Importados');
   if (!sh) {
     sh = ss.insertSheet('Importados');
-    sh.getRange(1, 1, 1, 5).setValues([['Início (epoch)', 'Origem', 'ID', 'Quando', 'Chave']]).setFontWeight('bold');
+    sh.getRange(1, 1, 1, 6).setValues([['Início (epoch)', 'Origem', 'ID', 'Quando', 'Chave', 'Usuário']]).setFontWeight('bold');
     sh.setFrozenRows(1);
+  } else if (String(sh.getRange(1, 6).getValue()) !== 'Usuário') {
+    throw new Error('Aba Importados no formato antigo. Renomeie a aba e rode de novo.');
   }
   var out = { sheet: sh, todos: [], outros: [], ids: {} };
-  if (sh.getLastRow() >= 2) sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues().forEach(function (r) {
+  if (sh.getLastRow() >= 2) sh.getRange(2, 1, sh.getLastRow() - 1, 6).getValues().forEach(function (r) {
+    if (String(r[5]) !== uid) return;
     var ini = Number(r[0]);
     if (r[4]) out.ids[String(r[4])] = 1;
     if (ini > 0) { out.todos.push(ini); if (r[1] !== 'Strava') out.outros.push(ini); }
@@ -235,30 +242,30 @@ function ehDuplicado_(chaves, ini) {
   return false;
 }
 // Grava os treinos e o registro em Importados. Se o registro falhar, desfaz os treinos (evita duplicar depois).
-function gravarComRegistro_(ss, shImp, itens) {
+function gravarComRegistro_(ss, shImp, uid, itens) {
   if (!itens.length) return [];
-  var sh = sheetFor_(ss, SCHEMA.atividade), ids = gravarLote_(ss, SCHEMA.atividade, itens.map(function (x) { return x.values; }));
+  var sh = sheetFor_(ss, SCHEMA.atividade), ids = gravarLote_(ss, SCHEMA.atividade, uid, itens.map(function (x) { return x.values; }));
   try {
     var now = new Date();
-    shImp.getRange(shImp.getLastRow() + 1, 1, itens.length, 5).setValues(itens.map(function (x, i) { return [x.ini, x.origem, ids[i], now, x.chave]; }));
+    shImp.getRange(shImp.getLastRow() + 1, 1, itens.length, 6).setValues(itens.map(function (x, i) { return [x.ini, x.origem, ids[i], now, x.chave, uid]; }));
   } catch (e) {
     sh.deleteRows(sh.getLastRow() - itens.length + 1, itens.length);
     throw e;
   }
-  auditLog_('import', 'atividade', ids[0] + '..' + ids[ids.length - 1], null, { origem: itens[0].origem, qtd: itens.length }, '');
+  auditLog_('import', 'atividade', ids[0] + '..' + ids[ids.length - 1], null, { origem: itens[0].origem, qtd: itens.length }, '', uid);
   return ids;
 }
 // Grava várias linhas de uma vez, com IDs sequenciais. Chamar dentro do lock.
-function gravarLote_(ss, sc, lista) {
+function gravarLote_(ss, sc, uid, lista) {
   if (!lista.length) return [];
   var sh = sheetFor_(ss, sc), p = props_(), k = 'SEQ_' + sc.prefixo, max = parseInt(p.getProperty(k) || '0', 10), last = sh.getLastRow(), now = new Date();
   if (last >= 2) sh.getRange(2, 1, last - 1, 1).getValues().forEach(function (r) { var m = String(r[0]).match(/(\d+)$/); if (m) max = Math.max(max, parseInt(m[1], 10)); });
   var ids = [], rows = lista.map(function (v, i) {
     var id = sc.prefixo + (max + 1 + i); ids.push(id);
-    return [id].concat(sc.campos.map(function (c) { return v[c[0]]; })).concat([now, now]);
+    return [id, uid].concat(sc.campos.map(function (c) { return v[c[0]]; })).concat([now, now]);
   });
   p.setProperty(k, String(max + lista.length));
-  sh.getRange(last + 1, 2, rows.length, 1).setNumberFormat('@');
+  sh.getRange(last + 1, COL.CAMPOS, rows.length, 1).setNumberFormat('@');
   sh.getRange(last + 1, 1, rows.length, rows[0].length).setValues(rows);
   return ids;
 }
