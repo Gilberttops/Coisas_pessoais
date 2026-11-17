@@ -184,6 +184,7 @@ svg text{fill:var(--mut);font:500 11px Barlow,sans-serif}
           <label>Intensidade<select name="intensidade"><option></option><option>Leve</option><option>Moderada</option><option>Forte</option></select></label>
         </div>
         <label>Obs<input name="obs" maxlength="300"></label>
+        <button type="button" class="btn sec" id="btnRep" style="margin:4px 0 8px">Repetir último treino</button>
         <datalist id="tipos"><option>Caminhada</option><option>Corrida</option><option>Musculação</option><option>Bicicleta</option><option>Natação</option><option>Funcional</option><option>Alongamento</option><option>Futebol</option><option>Treino livre</option></datalist>
         <div class="btns"><button class="btn">Salvar</button><button type="button" class="btn sec cancel hide">Cancelar</button><button type="button" class="btn del hide">Excluir</button></div>
       </form>
@@ -431,6 +432,15 @@ function renderPresets(){
   $('#presets').innerHTML = (DOSES[f.remedio.value] || []).map(function(d){ return '<button type="button" data-d="' + d + '" class="' + (d === atual ? 'on' : '') + '">' + fmt(d, d < 1 ? 2 : 1).replace(/,0+$/, '') + ' mg</button>'; }).join('');
   $$('#presets button').forEach(function(b){ b.addEventListener('click', function(){ f.dose.value = String(b.dataset.d).replace('.', ','); renderPresets(); }); });
 }
+$('#btnRep').addEventListener('click', function(){ // preenche tipo, minutos e intensidade do último treino; data fica a de hoje
+  var f = $('#fAtiv'), u = sortDesc((S.data && S.data.atividade) || [])[0];
+  if (!u) return msg('Ainda não há treino lançado.');
+  resetForm('atividade'); // sempre um treino novo, com data de hoje
+  f.tipo.value = u.tipo || ''; f.minutos.value = u.minutos == null ? '' : String(u.minutos).replace('.', ',');
+  f.intensidade.value = u.intensidade || '';
+  ['distancia','passos','kcal','fc','obs'].forEach(function(k){ f[k].value = ''; });
+  f.distancia.focus();
+});
 $('#fMed').remedio.addEventListener('change', function(){ $('#fMed').dose.value = ''; renderPresets(); });
 $('#fMed').dose.addEventListener('input', renderPresets);
 function editRow(ent, id){
